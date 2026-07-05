@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<title>鬼斬百科 本地全文搜尋</title>
+<style>
+  body { font-family: "Microsoft JhengHei", sans-serif; max-width: 860px; margin: 24px auto;
+         padding: 0 16px; color: #222; background: #f7f8fa; }
+  h1 { font-size: 20px; color: #1a6fb5; }
+  #bar { display: flex; gap: 8px; position: sticky; top: 0; background: #f7f8fa; padding: 10px 0; }
+  #kw { flex: 1; font-size: 17px; padding: 9px 12px; border: 2px solid #1a6fb5; border-radius: 8px; }
+  #info { color: #666; font-size: 13px; margin: 6px 0 14px; }
+  .item { background: #fff; border: 1px solid #ddd; border-radius: 10px; padding: 12px 16px; margin-bottom: 10px; }
+  .item a.t { font-size: 16px; font-weight: bold; color: #1a6fb5; text-decoration: none; }
+  .item a.t:hover { text-decoration: underline; }
+  .cnt { color: #999; font-size: 12px; margin-left: 8px; }
+  .snip { margin-top: 5px; font-size: 13px; color: #444; line-height: 1.7; }
+  mark { background: #ffe066; padding: 0 2px; border-radius: 2px; }
+  #more { display: block; margin: 12px auto; padding: 8px 24px; font-size: 14px;
+          border: 1px solid #1a6fb5; color: #1a6fb5; background: #fff; border-radius: 8px; cursor: pointer; }
+</style>
+</head>
+<body>
+<h1>鬼斬百科 本地全文搜尋</h1>
+<div id="bar"><input id="kw" type="text" placeholder="輸入關鍵字（空格分隔可 AND 搜尋多個詞）" autofocus></div>
+<div id="info">載入資料庫中…</div>
+<div id="list"></div>
+<button id="more" hidden>顯示更多</button>
+<p style="color:#999;font-size:12px;text-align:center;margin:20px 0;">
+  資料來源：<a href="https://acg.gamer.com.tw/wikimenu.php?s=60061" target="_blank" style="color:#1a6fb5;">巴哈姆特 鬼斬 哈啦板精華百科</a>，內容著作權歸原編輯者所有。搜尋結果點擊標題即前往原始頁面。
+</p>
+
+<script src="db.js"></script>
+<script>
+const RADIUS = 45, MAX_SNIP = 3, PAGE_SIZE = 30;
+const kwEl = document.getElementById('kw');
+const infoEl = document.getElementById('info');
+const listEl = document.getElementById('list');
+const moreBtn = document.getElementById('more');
+
+let db = [];
+try {
+  db = WIKI_DB.map(e => ({ ...e, lower: e.text.toLowerCase(), titleLower: e.title.toLowerCase() }));
+  infoEl.textContent = `資料庫共 ${db.length} 個條目，輸入即搜尋。`;
+} catch (e) {
+  infoEl.textContent = '找不到 db.js — 請先執行 build_db.py 建立資料庫。';
+}
+
+const esc = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+function countHits(lower, kw) {
+  let n = 0, i = 0;
+  while ((i = lower.indexOf(kw, i)) !== -1) { n++; i += kw.length; }
+  return n;
+}
+
+function snippets(text, lower, kw) {
+  const out = [];
+  let i = 0;
+  while (out.length < MAX_SNIP && (i = lower.indexOf(kw, i)) !== -1) {
+    const s = Math.max(0, i - RADIUS), e = Math.min(text.length, i + kw.length + RADIUS);
+    out.push((s > 0 ? '…' : '') + esc(text.slice(s, i)) + '<mark>' + esc(text.slice(i, i + kw.length))
+             + '</mark>' + esc(text.slice(i + kw.length, e)) + (e < text.length ? '…' : ''));
+    i += kw.length;
+  }
+  return out;
+}
+
+let hits = [], shown = 0;
+
+function render() {
+  const slice = hits.slice(shown, shown + PAGE_SIZE);
+  for (const h of slice) {
+    const div = document.createElement('div');
+    div.className = 'item';
+    div.innerHTML = `<a class="t" href="${h.url}" target="_blank">${esc(h.title)}</a>`
+      + `<span class="cnt">${h.total ? h.total + ' 處' : '標題符合'}</span>`
+      + h.snips.map(s => `<div class="snip">${s}</div>`).join('');
+    listEl.appendChild(div);
+  }
+  shown += slice.length;
+  moreBtn.hidden = shown >= hits.length;
+}
+
+function search() {
+  const raw = kwEl.value.trim().toLowerCase();
+  listEl.innerHTML = '';
+  hits = []; shown = 0;
+  moreBtn.hidden = true;
+  if (!raw) { infoEl.textContent = `資料庫共 ${db.length} 個條目，輸入即搜尋。`; return; }
+  const terms = raw.split(/\s+/);
+  const t0 = performance.now();
+  for (const e of db) {
+    const counts = terms.map(t => countHits(e.lower, t));
+    const titleHit = terms.every(t => e.titleLower.includes(t));
+    if (counts.every(c => c > 0) || titleHit) {
+      hits.push({ ...e, total: counts.reduce((a, b) => a + b, 0),
+                  snips: snippets(e.text, e.lower, terms[0]) });
+    }
+  }
+  hits.sort((a, b) => b.total - a.total);
+  infoEl.textContent = `「${kwEl.value.trim()}」：${hits.length} 個條目（${(performance.now() - t0).toFixed(0)} ms）`;
+  render();
+}
+
+let timer;
+kwEl.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(search, 150); });
+moreBtn.addEventListener('click', render);
+</script>
+</body>
+</html>

@@ -1,0 +1,6 @@
+# 只公開搜尋頁面（index.html + db.js），其餘留在本地
+db.json
+build_db.py
+__pycache__/
+*.user.js
+.claude/
